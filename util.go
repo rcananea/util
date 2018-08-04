@@ -1,6 +1,6 @@
 /*
 ** Arquivo: util.go by Cananéa
-** Atualizado: 03 de Maio de 2017
+** Atualizado: 29 de Junho de 2018
 */
 
 package util
@@ -14,12 +14,523 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"runtime"
 	"strings"
 	"time"
 	"bytes"
 	"github.com/tealeg/xlsx"
 )
+
+// Constantes
+const Silver = "C0C0C0"
+const White  = "FFFFFF"
+const Right  = "right"
+const Center = "center"
+const Left	 = "left"
+const Pipe	 = "|"
+
+// Define um Estilo para utilizar nas células do Excel
+func DefineStyle(cell *xlsx.Cell,Bold bool,FColor string,AHor string) (*xlsx.Style) {
+	cstyle := cell.GetStyle()
+	cstyle.Font.Italic = false
+	cstyle.Font.Bold = Bold
+	cstyle.Font.Size = 10
+	cstyle.Font.Name = "Verdana"
+	cstyle.Border.Top = "thin"
+	cstyle.Border.Left = "thin"
+	cstyle.Border.Right = "thin"
+	cstyle.Border.Bottom = "thin"
+	cstyle.Alignment.Horizontal = AHor
+	cstyle.Alignment.Vertical = Center
+	cstyle.Fill.PatternType = "solid"
+	cstyle.Fill.FgColor = FColor
+	return cstyle
+}
+
+// Converte CSVS para XLSX
+// Utilizar golexcel para gerar o CSV
+func Csv2XLSX(csv string,fnxlsx string) (string,error) {
+	CSVOnly := GetFnameOnly(csv)
+	Parts := strings.Split(strings.ToLower(CSVOnly),".")
+	if len(Parts) > 1 {
+		if !(Parts[1] == "csv" || Parts[1] == "txt") {
+			return fnxlsx,errors.New("Extensão não permitida\n")
+		}
+	}
+	fi,err := os.Open(csv)
+	if err != nil {
+		return fnxlsx,err
+	}
+	var nra int = 0 // contador de numero de linha por aba
+	var abaCorrente string = ""
+	var file *xlsx.File = xlsx.NewFile()
+	var sheet *xlsx.Sheet
+	var row *xlsx.Row
+	var cell *xlsx.Cell
+	var cstyle *xlsx.Style
+	var cstyle2 *xlsx.Style
+	var cstyle3 *xlsx.Style
+	var cstyle4 *xlsx.Style
+	var mergeGposD int = -1
+	var mergeGposL int = -1
+	var mergeGcolD int = 5
+	var mergeGcolL int = 7
+	var mudeCOL0 int = -1
+	var mudeCOL1 int = -1
+	var sz float64 = 32.0
+	var szLim float64 = 32.0
+	defer fi.Close()
+	r := bufio.NewReader(fi)
+	for {
+		var s,_,e  = r.ReadLine()
+		if e == nil {
+			ss := string(s)
+			if len(ss) < 2 {
+				continue
+			}
+			if ss[:2] == ";;" {
+				continue
+			}
+			parts := strings.Split(ss,";")
+			if len(parts) > 0 {
+				if parts[0][0] == '>' {
+					if parts[0][1:] == "Fim" {
+						break
+					}
+					nra = 0
+					abaCorrente = parts[0][1:]
+					if abaCorrente != "Log" {
+						sheet,err = file.AddSheet(abaCorrente)
+						if err != nil {
+							return fnxlsx,err
+						}
+						fmt.Printf("Criado %s\n",abaCorrente)
+					}
+				} else {
+					if abaCorrente == "Log" {
+						nra++
+					} else if abaCorrente == "Geral" {
+						nra++
+						if nra == 1 {
+							sz = 15.0
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								cell.Value = parts[p]
+								cell.NumFmt = "text"
+								if p == 0 {
+									cstyle = DefineStyle(cell,true,Silver,Center)
+								}
+								cell.SetStyle(cstyle)
+								if p > 1 {
+									if strings.Contains(parts[p],"PLACA") ||
+										strings.Contains(parts[p],"LINHA") ||
+										strings.Contains(parts[p],"SRC_ADDR") ||
+										strings.Contains(parts[p],"OPMSK") {
+										sz = 14.0
+									} else {
+										sz = 9.0
+									}
+								}
+								err = sheet.SetColWidth(p,p,sz)
+								if err != nil {
+									fmt.Printf(err.Error())
+								}
+							}
+						} else {
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								if nra == mergeGposD {
+									cell.Merge(mergeGcolD,0)
+									cell.Value = parts[p]
+								} else if nra == mergeGposL {
+									cell.Merge(mergeGcolL,0)
+									cell.Value = parts[p]
+								} else {
+									cell.Value = parts[p]
+								}
+								if p == 0 {
+									cstyle2 = DefineStyle(cell,true,Silver,Left)
+									cell.SetStyle(cstyle2)
+									if strings.Contains(parts[p],"DESCRI") {
+										mergeGposD = nra
+									} else if strings.Contains(parts[p],"LISTA") {
+										mergeGposL = nra
+									} else if strings.Contains(parts[p],"IPs") {
+										mergeGposL = nra
+										cell.Value = "LISTA IPS"
+									}
+								} else if p == 1 {
+									cstyle3 = DefineStyle(cell,false,White,Left)
+									cell.SetStyle(cstyle3)
+									if nra == mergeGposD {
+										for pp := 2; pp < len(parts)-1; pp++ {
+											cell = row.AddCell()
+											cell.Value = " "
+											cell.SetStyle(cstyle3)
+										}
+										break
+									} else if nra == mergeGposL {
+										for pp := 2; pp < len(parts)-1; pp++ {
+											cell = row.AddCell()
+											cell.Value = " "
+											cell.SetStyle(cstyle3)
+										}
+										break
+									}
+								} else {
+									cstyle4 = DefineStyle(cell,false,White,Right)
+									val,err := strconv.ParseFloat(parts[p],64)
+									if err == nil {
+										cell.SetFloat(val)
+									} else {
+										cstyle4.Alignment.Horizontal = Left
+									}
+									cell.SetStyle(cstyle4)
+								}
+							}
+						}
+					} else if abaCorrente == "Analogicos" {
+						nra++
+						if nra < 4 {
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								cstyle = DefineStyle(cell,true,Silver,Center)
+								if p == 0 && nra == 1 {
+									cell.Merge(len(parts)-2,0)
+									cell.Value = parts[p]
+								} else if p == 0 && nra == 2 {
+									cell.Merge(0,1)
+									cell.Value = parts[p]
+								} else if p == 1 && nra == 2 {
+									cell.Merge(1,0)
+									cell.Value = parts[p]
+								} else if p == 3 && nra == 2 {
+									cell.Merge(1,0)
+									cell.Value = parts[p]
+								} else if ((p >= 5 && p <= len(parts)-2) && nra == 2) {
+									cell.Merge(0,1)
+									cell.Value = parts[p]
+									if strings.Contains(parts[p],"ID ") {
+										err = sheet.SetColWidth(p,p,32)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									} else if strings.Contains(parts[p],"Agente") {
+										err = sheet.SetColWidth(p,p,10)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									} else if strings.Contains(parts[p],"Identificador") {
+										err = sheet.SetColWidth(p,p,40)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									} else if strings.Contains(parts[p],"Grupo") {
+										cell.Value = "Grupo OCR"
+										err = sheet.SetColWidth(p,p,16)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									}
+								} else {
+									cell.Value = parts[p]
+								}
+								cell.NumFmt = "text"
+								cell.SetStyle(cstyle)
+								if nra == 1 {
+									if p ==  0 {
+										sz = 32.0
+									} else {
+										sz = 12.0
+									}
+									err = sheet.SetColWidth(p,p,sz)
+									if err != nil {
+										fmt.Printf(err.Error())
+									}
+								}
+							}
+						} else {
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								if p == 0 {
+									cell.NumFmt = "text"
+									cell.Value = parts[p]
+									cstyle2 = DefineStyle(cell,true,White,Left)
+									cell.SetStyle(cstyle2)
+								} else {
+									val,err := strconv.ParseFloat(parts[p],64)
+									if err == nil {
+										cell.SetFloat(val)
+										cstyle3 = DefineStyle(cell,false,White,Right)
+										cell.SetStyle(cstyle3)
+									} else {
+										var align string = Left
+										cell.NumFmt = "text"
+										if strings.Contains(parts[p],Pipe) {
+											align = Right
+											if mudeCOL0 == -1 && mudeCOL1 == -1 {
+												err = sheet.SetColWidth(p,p,szLim)
+												if err != nil {
+													fmt.Printf(err.Error())
+												} else {
+													mudeCOL0 = p
+												}
+											} else if mudeCOL0 >= 0 && mudeCOL0 != p && mudeCOL1 == -1 {
+												err = sheet.SetColWidth(p,p,szLim)
+												if err != nil {
+													fmt.Printf(err.Error())
+												} else {
+													mudeCOL1 = p
+												}
+											}
+										}
+										cell.Value = parts[p]
+										cstyle4 = DefineStyle(cell,false,White,align)
+										cell.SetStyle(cstyle4)
+									}
+								}
+							}
+						}
+					} else if abaCorrente == "Digitais" {
+						nra++
+						if nra < 4 {
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								cstyle = DefineStyle(cell,true,Silver,Center)
+								if p == 0 && nra == 1 {
+									cell.Merge(len(parts)-2,0)
+									cell.Value = parts[p]
+								} else if ((p >= 0 && p <= len(parts)-2) && nra == 2) {
+									cell.Merge(0,1)
+									cell.Value = parts[p]
+									if strings.Contains(parts[p],"ID ") {
+										err = sheet.SetColWidth(p,p,32)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									} else if strings.Contains(parts[p],"Alarm") {
+										cell.Value = "Alarme/SOE"
+										err = sheet.SetColWidth(p,p,60)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									} else if strings.Contains(parts[p],"Identificador") {
+										err = sheet.SetColWidth(p,p,40)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									} else if strings.Contains(parts[p],"Grupo") {
+										cell.Value = "Grupo OCR"
+										err = sheet.SetColWidth(p,p,16)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									}
+								} else {
+									cell.Value = parts[p]
+								}
+								cell.NumFmt = "text"
+								cell.SetStyle(cstyle)
+								if nra == 1 {
+									if p ==  0 {
+										sz = 32.0
+									} else {
+										sz = 12.0
+									}
+									err = sheet.SetColWidth(p,p,sz)
+									if err != nil {
+										fmt.Printf(err.Error())
+									}
+								}
+							}
+						} else {
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								if p == 0 {
+									cell.NumFmt = "text"
+									cell.Value = parts[p]
+									cstyle2 = DefineStyle(cell,true,White,Left)
+									cell.SetStyle(cstyle2)
+								} else {
+									val,err := strconv.ParseFloat(parts[p],64)
+									if err == nil {
+										cell.SetFloat(val)
+										cstyle3 = DefineStyle(cell,false,White,Right)
+										cell.SetStyle(cstyle3)
+									} else {
+										cell.NumFmt = "text"
+										cell.Value = parts[p]
+										cstyle4 = DefineStyle(cell,false,White,Left)
+										cell.SetStyle(cstyle4)
+									}
+								}
+							}
+						}
+					} else if abaCorrente == "Totalizados" {
+						nra++
+						if nra < 4 {
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								cstyle = DefineStyle(cell,true,Silver,Center)
+								if p == 0 && nra == 1 {
+									cell.Merge(len(parts)-2,0)
+									cell.Value = parts[p]
+								} else if ((p >= 0 && p <= len(parts)-2) && nra == 2) {
+									cell.Merge(0,1)
+									cell.Value = parts[p]
+									if strings.Contains(parts[p],"ID ") {
+										err = sheet.SetColWidth(p,p,32)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									} else if strings.Contains(parts[p],"Fator") {
+										err = sheet.SetColWidth(p,p,20)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									}
+								} else {
+									cell.Value = parts[p]
+								}
+								cell.NumFmt = "text"
+								cell.SetStyle(cstyle)
+								if nra == 1 {
+									if p ==  0 {
+										sz = 32.0
+									} else {
+										sz = 12.0
+									}
+									err = sheet.SetColWidth(p,p,sz)
+									if err != nil {
+										fmt.Printf(err.Error())
+									}
+								}
+							}
+						} else {
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								if p == 0 {
+									cell.NumFmt = "text"
+									cell.Value = parts[p]
+									cstyle2 = DefineStyle(cell,true,White,Left)
+									cell.SetStyle(cstyle2)
+								} else {
+									val,err := strconv.ParseFloat(parts[p],64)
+									if err == nil {
+										cell.SetFloat(val)
+										cstyle3 = DefineStyle(cell,false,White,Right)
+										cell.SetStyle(cstyle3)
+									} else {
+										cell.NumFmt = "text"
+										cell.Value = parts[p]
+										cstyle4 = DefineStyle(cell,false,White,Left)
+										cell.SetStyle(cstyle4)
+									}
+								}
+							}
+						}
+					} else if abaCorrente == "Controles" {
+						nra++
+						if nra < 4 {
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								cstyle = DefineStyle(cell,true,Silver,Center)
+								if p == 0 && nra == 1 {
+									cell.Merge(len(parts)-2,0)
+									cell.Value = parts[p]
+								} else if ((p >= 0 && p <= len(parts)-2) && nra == 2) {
+									cell.Merge(0,1)
+									cell.Value = parts[p]
+									if strings.Contains(parts[p],"ID ") {
+										err = sheet.SetColWidth(p,p,32)
+										if err != nil {
+											fmt.Printf(err.Error())
+										}
+									}
+								} else {
+									cell.Value = parts[p]
+								}
+								cell.NumFmt = "text"
+								cell.SetStyle(cstyle)
+								if nra == 1 {
+									if p ==  0 {
+										sz = 32.0
+									} else {
+										sz = 12.0
+									}
+									err = sheet.SetColWidth(p,p,sz)
+									if err != nil {
+										fmt.Printf(err.Error())
+									}
+								}
+							}
+						} else {
+							row = sheet.AddRow()
+							for p := 0; p < len(parts)-1; p++ {
+								cell = row.AddCell()
+								if p == 0 {
+									cell.NumFmt = "text"
+									cell.Value = parts[p]
+									cstyle2 = DefineStyle(cell,true,White,Left)
+									cell.SetStyle(cstyle2)
+								} else {
+									val,err := strconv.ParseFloat(parts[p],64)
+									if err == nil {
+										cell.SetFloat(val)
+										cstyle3 = DefineStyle(cell,false,White,Right)
+										cell.SetStyle(cstyle3)
+									} else {
+										cell.NumFmt = "text"
+										cell.Value = parts[p]
+										cstyle4 = DefineStyle(cell,false,White,Left)
+										cell.SetStyle(cstyle4)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		} else {
+			break
+		}
+	}
+	if len(fnxlsx) > 5 {
+		err = file.Save(fnxlsx)
+	}
+	return fnxlsx,err
+}
+
+func TimeZero()(time.Time) {
+	return time.Unix(0,0)
+}
+
+func ToBR(tUTC time.Time)(time.Time) {
+	secs := tUTC.Unix()
+	return time.Unix(secs,0)
+}
+
+func ToFloat64(campo string) (float64,error) {
+	x,err := strconv.ParseFloat(campo,64)
+	if err != nil {
+		var y int
+		y,err = strconv.Atoi(campo)
+		if err == nil {
+			x = float64(y)
+		}
+	}
+	return x,err
+}
 
 func GetWD() (string) {
 	pwd,err := os.Getwd()
@@ -41,7 +552,7 @@ func ELinux() (bool) {
 	return eLinux
 }
 
-func getUserName() (string) {
+func GetUserName() (string) {
 	user := "USERNAME"
 	if ELinux() {
 		user = "USER"
@@ -144,14 +655,21 @@ func Now() (string) {
 	return fmt.Sprintf("%s %s/%s/%s",ja[11:19],ja[8:10],ja[5:7],ja[0:4])
 }
 
+func Agora() (string) {
+	now := time.Now()
+	ja := fmt.Sprintf("%s",now)
+	return fmt.Sprintf("%s",ja[11:16])
+}
+
 func LExcel2Memory(pgm string,versao string,xlsFile string,show bool) (int,string) {
 	var erro int = -1
 	var txtFile string = ""
 	var txtSaida string = ""
 	var txtSaidaAux string = ""
-	pos := strings.Index(xlsFile,".xlsx")
+	fnlower := strings.ToLower(xlsFile)
+	pos := strings.Index(fnlower,".xlsx")
 	if pos < 0 {
-		pos = strings.Index(xlsFile,".xlsm")
+		pos = strings.Index(fnlower,".xlsm")
 	}
 	if pos >= 0 {
 		fOk := Exists(xlsFile)
@@ -209,7 +727,7 @@ func LExcel2Memory(pgm string,versao string,xlsFile string,show bool) (int,strin
 						linepaba[f] += 1
 						// processe as colunas desta linha
 						for _,cell := range row.Cells {
-							valor,_ := cell.String()
+							valor := cell.String()
 							if len(valor) == 0 {
 								valor = " "
 							} else {
@@ -256,9 +774,10 @@ func LExcel(pgm string,versao string,xlsFile string,txtFile string,show bool) (i
 	var erro int = -1
 	var txtSaida string = ""
 	var txtSaidaAux string = ""
-	pos := strings.Index(xlsFile,".xlsx")
+	fnlower := strings.ToLower(xlsFile)
+	pos := strings.Index(fnlower,".xlsx")
 	if pos < 0 {
-		pos = strings.Index(xlsFile,".xlsm")
+		pos = strings.Index(fnlower,".xlsm")
 	}
 	if pos >= 0 {
 		fOk := Exists(xlsFile)
@@ -333,7 +852,7 @@ func LExcel(pgm string,versao string,xlsFile string,txtFile string,show bool) (i
 							linepaba[f] += 1
 							// processe as colunas desta linha
 							for _,cell := range row.Cells {
-								valor,_ := cell.String()
+								valor := cell.String()
 								if len(valor) == 0 {
 									valor = " "
 								} else {
@@ -411,7 +930,7 @@ func IMMTempDir() (string,error) {
 
 func LExcel2Mem(pgm string,versao string,xlsFile string,show bool) (int,string) {
 	var texto string = ""
-	tmpFile := filepath.Join(os.TempDir(),fmt.Sprintf("_%s_%s_.txt",getUserName(),GetFnameNoExtension(xlsFile)))
+	tmpFile := filepath.Join(os.TempDir(),fmt.Sprintf("_%s_%s_.txt",GetUserName(),GetFnameNoExtension(xlsFile)))
 	erro,_ := LExcel(pgm,versao,xlsFile,tmpFile,show)
 	if erro == 0 {
 		buf,err := ioutil.ReadFile(tmpFile)
@@ -430,7 +949,7 @@ func GetFullPathCSV(Tabela string) (string) {
 }
 
 func CrieLOG(logname string) (*os.File,error,string) {
-	namelog := filepath.Join(os.TempDir(),fmt.Sprintf("%s_%s",getUserName(),logname))
+	namelog := filepath.Join(os.TempDir(),fmt.Sprintf("%s_%s",GetUserName(),logname))
 	file,err := os.Create(namelog)
 	return file,err,namelog
 }
