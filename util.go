@@ -1,6 +1,6 @@
 /*
 ** Arquivo: util.go by Cananéa
-** Atualizado: 29 de Junho de 2018
+** Atualizado: 18 de Julho de 2018
 */
 
 package util
@@ -25,6 +25,7 @@ import (
 // Constantes
 const Silver = "C0C0C0"
 const White  = "FFFFFF"
+const Yellow = "FFFFCC"
 const Right  = "right"
 const Center = "center"
 const Left	 = "left"
@@ -78,6 +79,7 @@ func Csv2XLSX(csv string,fnxlsx string) (string,error) {
 	var mergeGcolL int = 7
 	var mudeCOL0 int = -1
 	var mudeCOL1 int = -1
+	var posIDOLD int = -1
 	var sz float64 = 32.0
 	var szLim float64 = 32.0
 	defer fi.Close()
@@ -95,6 +97,7 @@ func Csv2XLSX(csv string,fnxlsx string) (string,error) {
 			parts := strings.Split(ss,";")
 			if len(parts) > 0 {
 				if parts[0][0] == '>' {
+					posIDOLD = -1
 					if parts[0][1:] == "Fim" {
 						break
 					}
@@ -124,11 +127,15 @@ func Csv2XLSX(csv string,fnxlsx string) (string,error) {
 								}
 								cell.SetStyle(cstyle)
 								if p > 1 {
-									if strings.Contains(parts[p],"PLACA") ||
-										strings.Contains(parts[p],"LINHA") ||
+									if strings.Contains(parts[p],"PLACA")    ||
+										strings.Contains(parts[p],"LINHA")    ||
 										strings.Contains(parts[p],"SRC_ADDR") ||
+										strings.Contains(parts[p],"APTITLE")  ||
+										strings.Contains(parts[p],"CNF/MUL")  ||
 										strings.Contains(parts[p],"OPMSK") {
 										sz = 14.0
+									} else if strings.Contains(parts[p],"SISTEMA") {
+										sz = 24.0
 									} else {
 										sz = 9.0
 									}
@@ -218,6 +225,10 @@ func Csv2XLSX(csv string,fnxlsx string) (string,error) {
 										err = sheet.SetColWidth(p,p,32)
 										if err != nil {
 											fmt.Printf(err.Error())
+										} else {
+											if p > 0 {
+												posIDOLD = p
+											}
 										}
 									} else if strings.Contains(parts[p],"Agente") {
 										err = sheet.SetColWidth(p,p,10)
@@ -290,7 +301,11 @@ func Csv2XLSX(csv string,fnxlsx string) (string,error) {
 											}
 										}
 										cell.Value = parts[p]
-										cstyle4 = DefineStyle(cell,false,White,align)
+										c_cor := White
+										if p == posIDOLD {
+											c_cor = Yellow
+										}
+										cstyle4 = DefineStyle(cell,false,c_cor,align)
 										cell.SetStyle(cstyle4)
 									}
 								}
@@ -313,6 +328,10 @@ func Csv2XLSX(csv string,fnxlsx string) (string,error) {
 										err = sheet.SetColWidth(p,p,32)
 										if err != nil {
 											fmt.Printf(err.Error())
+										} else {
+											if p > 0 {
+												posIDOLD = p
+											}
 										}
 									} else if strings.Contains(parts[p],"Alarm") {
 										cell.Value = "Alarme/SOE"
@@ -367,7 +386,11 @@ func Csv2XLSX(csv string,fnxlsx string) (string,error) {
 									} else {
 										cell.NumFmt = "text"
 										cell.Value = parts[p]
-										cstyle4 = DefineStyle(cell,false,White,Left)
+										c_cor := White
+										if p == posIDOLD {
+											c_cor = Yellow
+										}
+										cstyle4 = DefineStyle(cell,false,c_cor,Left)
 										cell.SetStyle(cstyle4)
 									}
 								}
