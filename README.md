@@ -1,3 +1,4 @@
 # util
-# Atualizado em 3 de Julho de 2018
+# 23-08-2018 - Alterado a rotina csv2xlsx 
+#
 

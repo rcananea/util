@@ -1,6 +1,6 @@
 /*
 ** Arquivo: util.go by Cananéa
-** Atualizado: 18 de Julho de 2018
+** Atualizado: 23 de Agosto de 2018
 */
 
 package util
@@ -406,7 +406,16 @@ func Csv2XLSX(csv string,fnxlsx string) (string,error) {
 								if p == 0 && nra == 1 {
 									cell.Merge(len(parts)-2,0)
 									cell.Value = parts[p]
-								} else if ((p >= 0 && p <= len(parts)-2) && nra == 2) {
+								} else if p == 0 && nra == 2 {
+									cell.Merge(0,1)
+									cell.Value = parts[p]
+								} else if p == 1 && nra == 2 {
+									cell.Merge(1,0)
+									cell.Value = parts[p]
+								} else if p == 3 && nra == 2 {
+									cell.Merge(1,0)
+									cell.Value = parts[p]
+								} else if ((p >= 5 && p <= len(parts)-2) && nra == 2) {
 									cell.Merge(0,1)
 									cell.Value = parts[p]
 									if strings.Contains(parts[p],"ID ") {
